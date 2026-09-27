@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RPG PvP Online</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#0d1220;color:#fff;font-family:system-ui,sans-serif}
+.wrap{width:min(980px,100%);margin:auto;padding:12px}h1{text-align:center;font-size:24px}
+canvas{width:100%;background:#183c2b;border:3px solid #52637d;border-radius:12px;display:block;image-rendering:pixelated}
+.panel{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.box{background:#182235;border:1px solid #34435b;border-radius:9px;padding:9px}
+input,select,button{padding:9px;border-radius:7px;border:0;margin:3px}button{background:#42638f;color:#fff;font-weight:700;cursor:pointer}
+#chat{height:120px;overflow:auto;font-size:13px}.hide{display:none}.danger{background:#713d4c}
+</style></head><body><div class="wrap">
+<h1>⚔️ RPG PvP Online</h1>
+<div id="login" class="box">
+  <b>สร้างตัวละคร</b><br>
+  <input id="name" placeholder="ชื่อตัวละคร" maxlength="16" value="ผู้กล้า">
+  <select id="class"><option value="sword">⚔️ ดาบ — ประชิด</option><option value="gun">🔫 ปืน — ยิงเร็ว</option><option value="bow">🏹 ธนู — ยิงแรง</option></select>
+  <button onclick="join()">เข้าสู่สนาม</button>
+</div>
+<canvas id="game" width="800" height="500"></canvas>
+<div class="panel">
+<div class="box"><b>ตัวละคร</b><div id="stats">ยังไม่ได้เข้าสู่เกม</div>
+<button onclick="attackClosest()">⚔️ โจมตีเป้าหมายใกล้สุด</button></div>
+<div class="box"><b>แชต</b><div id="chat"></div><input id="msg" placeholder="พิมพ์ข้อความ"><button onclick="chat()">ส่ง</button></div>
+</div>
+<p>เดิน: <b>WASD / ลูกศร</b> • โจมตี: <b>Space</b> • คลิกผู้เล่นเพื่อเลือกเป้าหมาย</p>
+</div>
+<script>
+const c=document.getElementById("game"),ctx=c.getContext("2d"), W=800,H=500;
+let ws,self=null,players=[],target=null,keys={};
+const clsNames={sword:"⚔️ ดาบ",gun:"🔫 ปืน",bow:"🏹 ธนู"};
+function join(){
+ ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host);
+ ws.onopen=()=>ws.send(JSON.stringify({type:"join",name:name.value,class:document.getElementById("class").value}));
+ ws.onmessage=e=>{const m=JSON.parse(e.data);
+  if(m.type==="init"){self=m.self;document.getElementById("login").classList.add("hide")}
+  if(m.type==="state"){players=m.players;self=players.find(x=>x.id===self.id)||self;draw();updateStats()}
+  if(m.type==="chat"||m.type==="hit"){const d=document.getElementById("chat");d.innerHTML+="<div>"+esc(m.text)+"</div>";d.scrollTop=d.scrollHeight}
+ };
+ ws.onclose=()=>add("🔴 หลุดจากเซิร์ฟเวอร์");
+}
+function esc(s){return String(s).replace(/[&<>"]/g,x=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[x]))}
+function add(t){document.getElementById("chat").innerHTML+="<div>"+esc(t)+"</div>"}
+function chat(){let x=document.getElementById("msg");if(ws&&x.value.trim())ws.send(JSON.stringify({type:"chat",text:x.value}));x.value=""}
+document.getElementById("msg").addEventListener("keydown",e=>{if(e.key==="Enter")chat()});
+function attackClosest(){
+ if(!self)return;
+ let others=players.filter(p=>p.id!==self.id&&p.hp>0);
+ if(!others.length)return;
+ others.sort((a,b)=>Math.hypot(a.x-self.x,a.y-self.y)-Math.hypot(b.x-self.x,b.y-self.y));
+ target=others[0]; ws.send(JSON.stringify({type:"attack",target:target.id}));
+}
+document.addEventListener("keydown",e=>{keys[e.key.toLowerCase()]=true;if(e.code==="Space"){e.preventDefault();attackClosest()}});
+document.addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
+c.addEventListener("click",e=>{if(!self)return;const r=c.getBoundingClientRect(),x=(e.clientX-r.left)*800/r.width,y=(e.clientY-r.top)*500/r.height;
+ target=players.filter(p=>p.id!==self.id).sort((a,b)=>Math.hypot(a.x-x,a.y-y)-Math.hypot(b.x-x,b.y-y))[0];if(target&&Math.hypot(target.x-x,target.y-y)<35)ws.send(JSON.stringify({type:"attack",target:target.id}));
+});
+setInterval(()=>{
+ if(!self||!ws||ws.readyState!==1)return;
+ let dx=(keys["d"]||keys["arrowright"]?1:0)-(keys["a"]||keys["arrowleft"]?1:0);
+ let dy=(keys["s"]||keys["arrowdown"]?1:0)-(keys["w"]||keys["arrowup"]?1:0);
+ if(dx||dy){let n=Math.hypot(dx,dy);self.x=Math.max(30,Math.min(770,self.x+dx/n*5));self.y=Math.max(30,Math.min(470,self.y+dy/n*5));ws.send(JSON.stringify({type:"move",x:self.x,y:self.y}))}
+},50);
+function updateStats(){if(!self)return;document.getElementById("stats").innerHTML=`${esc(self.name)} • ${clsNames[self.class]}<br>❤️ ${self.hp}/${self.maxHp} • ⭐ Lv.${self.level} • 💰 ${self.gold} • ☠️ ${self.kills}`;}
+function draw(){
+ ctx.fillStyle="#183c2b";ctx.fillRect(0,0,W,H);
+ for(let i=0;i<20;i++){ctx.fillStyle=i%2?"#205237":"#1e4c32";ctx.fillRect((i*83)%800,(i*137)%500,5,5)}
+ ctx.fillStyle="#9b7746";ctx.fillRect(0,235,800,35);
+ players.forEach(p=>{
+  ctx.beginPath();ctx.arc(p.x,p.y,18,p.id===self?.id?0:0,Math.PI*2);ctx.fillStyle=p.id===self?.id?"#5ed1ff":"#ff9a62";ctx.fill();
+  ctx.font="20px serif";ctx.textAlign="center";ctx.fillText(p.class==="sword"?"⚔️":p.class==="gun"?"🔫":"🏹",p.x,p.y+7);
+  ctx.font="12px sans-serif";ctx.fillStyle="#fff";ctx.fillText(p.name,p.x,p.y-24);
+  ctx.fillStyle="#222";ctx.fillRect(p.x-22,p.y-19,44,5);ctx.fillStyle="#5ee36c";ctx.fillRect(p.x-22,p.y-19,44*Math.max(0,p.hp/p.maxHp),5);
+  if(target?.id===p.id){ctx.strokeStyle="#ffe05a";ctx.lineWidth=3;ctx.strokeRect(p.x-24,p.y-26,48,52)}
+ });
+ ctx.fillStyle="rgba(0,0,0,.45)";ctx.fillRect(8,8,300,35);ctx.fillStyle="#fff";ctx.font="14px sans-serif";ctx.textAlign="left";ctx.fillText("🌐 สนาม PvP ออนไลน์ • คลิกผู้เล่นเพื่อโจมตี",18,31);
+}
+</script></body></html>
