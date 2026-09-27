@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ตำนานผู้กล้า - RPG</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#101522;color:#fff;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;justify-content:center}
+#wrap{width:min(900px,100vw);padding:14px}h1{font-size:24px;margin:4px 0 10px;text-align:center}
+#game{display:block;width:100%;background:#182536;border:3px solid #596b82;border-radius:12px;image-rendering:pixelated}
+.panel{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.box{background:#1b2638;border:1px solid #3b4c65;border-radius:9px;padding:8px 11px;flex:1;min-width:180px}
+button{background:#334b6d;color:white;border:0;border-radius:8px;padding:9px 13px;font-weight:700;cursor:pointer}
+button:hover{background:#46658e}.controls{display:flex;justify-content:center;gap:7px;margin-top:10px}.controls button{width:54px;height:42px}
+#log{height:105px;overflow:auto;font-size:13px;line-height:1.5;color:#dce7f5}
+small{color:#aebdd0}
+</style>
+</head>
+<body><div id="wrap">
+<h1>⚔️ ตำนานผู้กล้า: ป่ามรกต</h1>
+<canvas id="game" width="800" height="500"></canvas>
+<div class="panel">
+  <div class="box" id="stats"></div>
+  <div class="box"><b>ภารกิจ</b><br>🌲 สำรวจป่ามรกต และกำจัดมอนสเตอร์ 5 ตัว<br><small>เดินชนมอนสเตอร์เพื่อเริ่มต่อสู้</small></div>
+  <div class="box"><b>บันทึกการผจญภัย</b><div id="log"></div></div>
+</div>
+<div class="controls">
+<button onclick="move(0,-1)">▲</button>
+<button onclick="move(-1,0)">◀</button>
+<button onclick="move(0,1)">▼</button>
+<button onclick="move(1,0)">▶</button>
+<button onclick="heal()">💚 ฟื้นพลัง</button>
+</div>
+<p style="text-align:center"><small>คีย์บอร์ด: WASD / ปุ่มลูกศร • กด R เพื่อเริ่มเกมใหม่</small></p>
+</div>
+<script>
+const c=document.getElementById('game'),ctx=c.getContext('2d');
+const T=40, cols=20, rows=12;
+let p, monsters, chest, gameOver=false, keys={};
+const logEl=document.getElementById('log'), stats=document.getElementById('stats');
+
+function reset(){
+ p={x:2,y:6,hp:100,max:100,atk:18,def:4,lv:1,xp:0,next:60,gold:20,kills:0};
+ monsters=[
+  {x:7,y:3,hp:35,max:35,atk:9,name:'สไลม์',color:'#54d26b',xp:22,gold:8},
+  {x:12,y:8,hp:48,max:48,atk:12,name:'ก็อบลิน',color:'#b5d94c',xp:30,gold:12},
+  {x:16,y:4,hp:55,max:55,atk:14,name:'หมาป่า',color:'#aeb5c3',xp:35,gold:15},
+  {x:5,y:9,hp:42,max:42,atk:11,name:'ก็อบลิน',color:'#b5d94c',xp:28,gold:10},
+  {x:18,y:9,hp:70,max:70,atk:17,name:'อสูรป่า',color:'#c76cff',xp:50,gold:25}
+ ];
+ chest={x:14,y:2,open:false}; gameOver=false;
+ addLog('🌟 การผจญภัยเริ่มต้น! กำจัดมอนสเตอร์ 5 ตัว');
+ draw();
+}
+function addLog(s){logEl.innerHTML='<div>'+s+'</div>'+logEl.innerHTML}
+function draw(){
+ ctx.clearRect(0,0,c.width,c.height);
+ // grass
+ for(let y=0;y<rows;y++)for(let x=0;x<cols;x++){
+  ctx.fillStyle=(x+y)%2?'#2c6a42':'#326f46';ctx.fillRect(x*T,y*T,T,T);
+  ctx.strokeStyle='rgba(255,255,255,.035)';ctx.strokeRect(x*T,y*T,T,T);
+ }
+ // water
+ ctx.fillStyle='#27749b';ctx.fillRect(0,0,4*T,2*T);ctx.fillRect(9*T,0,3*T,1*T);
+ // trees
+ [[1,2],[3,1],[4,4],[10,4],[11,10],[15,7],[17,1],[19,6],[8,9],[2,10]].forEach(([x,y])=>tree(x,y));
+ // bridge/path
+ ctx.fillStyle='#a78250';ctx.fillRect(4*T,6*T,15*T,T);
+ for(let i=0;i<15;i++){ctx.fillStyle='#b9945c';ctx.fillRect((4+i)*T,6*T,2,T)}
+ // chest
+ ctx.font='28px serif';ctx.textAlign='center';ctx.fillText(chest.open?'📦':'🧰',chest.x*T+20,chest.y*T+30);
+ // monsters
+ monsters.forEach(m=>{if(m.hp<=0)return;ctx.font='27px serif';ctx.fillText(m.name==='สไลม์'?'🟢':m.name==='หมาป่า'?'🐺':m.name==='อสูรป่า'?'👹':'👺',m.x*T+20,m.y*T+30);bar(m.x*T+4,m.y*T+33,T-8,4,m.hp/m.max,'#ff5555')});
+ // player
+ ctx.font='30px serif';ctx.fillText('🧙',p.x*T+20,p.y*T+31);
+ stats.innerHTML=`❤️ HP ${p.hp}/${p.max} &nbsp; ⚔️ ATK ${p.atk} &nbsp; 🛡️ DEF ${p.def}<br>⭐ Lv.${p.lv} &nbsp; XP ${p.xp}/${p.next} &nbsp; 💰 ${p.gold} &nbsp; ☠️ ${p.kills}/5`;
+ if(gameOver){ctx.fillStyle='rgba(0,0,0,.7)';ctx.fillRect(0,0,c.width,c.height);ctx.fillStyle='#fff';ctx.textAlign='center';ctx.font='bold 34px sans-serif';ctx.fillText(p.kills>=5?'🏆 ชนะภารกิจ!':'💀 พ่ายแพ้',400,220);ctx.font='18px sans-serif';ctx.fillText('กด R เพื่อเล่นใหม่',400,260)}
+}
+function tree(x,y){ctx.font='30px serif';ctx.textAlign='center';ctx.fillText('🌳',x*T+20,y*T+31)}
+function bar(x,y,w,h,r,color){ctx.fillStyle='#222';ctx.fillRect(x,y,w,h);ctx.fillStyle=color;ctx.fillRect(x,y,w*Math.max(0,r),h)}
+function move(dx,dy){
+ if(gameOver)return;
+ let nx=Math.max(0,Math.min(cols-1,p.x+dx)), ny=Math.max(0,Math.min(rows-1,p.y+dy));
+ if((nx<4&&ny<2)||[[1,2],[3,1],[4,4],[10,4],[11,10],[15,7],[17,1],[19,6],[8,9],[2,10]].some(t=>t[0]===nx&&t[1]===ny)) return;
+ let m=monsters.find(m=>m.hp>0&&m.x===nx&&m.y===ny);
+ if(m){fight(m);return}
+ p.x=nx;p.y=ny;
+ if(p.x===chest.x&&p.y===chest.y&&!chest.open){chest.open=true;p.gold+=30;p.hp=Math.min(p.max,p.hp+20);addLog('🧰 เปิดหีบ! ได้ 30 ทองและฟื้น HP 20');}
+ draw();
+}
+function fight(m){
+ let dmg=Math.max(1,p.atk-Math.floor(Math.random()*6));m.hp-=dmg;
+ addLog(`⚔️ โจมตี ${m.name} สร้างความเสียหาย ${dmg}`);
+ if(m.hp<=0){
+  p.kills++;p.xp+=m.xp;p.gold+=m.gold;addLog(`✨ ชนะ ${m.name}! +${m.xp} XP +${m.gold} ทอง`);
+  if(p.xp>=p.next){p.xp-=p.next;p.lv++;p.next=Math.floor(p.next*1.45);p.max+=20;p.hp=p.max;p.atk+=5;p.def+=2;addLog(`⬆️ เลเวลอัป! ตอนนี้ Lv.${p.lv}`)}
+  if(p.kills>=5)addLog('🏆 ภารกิจสำเร็จ! ป่ามรกตปลอดภัยแล้ว');
+ }else{
+  let hit=Math.max(1,m.atk-p.def+Math.floor(Math.random()*5));p.hp-=hit;
+  addLog(`💥 ${m.name} โจมตีกลับ ${hit} ดาเมจ`);
+  if(p.hp<=0){p.hp=0;gameOver=true;addLog('💀 ผู้กล้าล้มลง...')}
+ }
+ draw();
+}
+function heal(){
+ if(gameOver)return;
+ if(p.gold<5){addLog('💰 ทองไม่พอสำหรับยาฟื้นพลัง (5 ทอง)');return}
+ if(p.hp===p.max){addLog('❤️ HP เต็มแล้ว');return}
+ p.gold-=5;p.hp=Math.min(p.max,p.hp+35);addLog('🧪 ใช้ยา ฟื้น HP 35');
+ draw();
+}
+document.addEventListener('keydown',e=>{
+ if(e.key.toLowerCase()==='r'){reset();return}
+ const k=e.key.toLowerCase();
+ if(['arrowup','w'].includes(k))move(0,-1);
+ if(['arrowdown','s'].includes(k))move(0,1);
+ if(['arrowleft','a'].includes(k))move(-1,0);
+ if(['arrowright','d'].includes(k))move(1,0);
+});
+reset();
+</script>
+</body></html>
